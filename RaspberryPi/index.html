@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Camera Slider Control</title>
+  <style>
+    /* === Basic Reset & Body === */
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    /* === Container Card === */
+    .container {
+      background: #ffffff;
+      padding: 20px 30px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      width: 360px;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 1.5em;
+      color: #333333;
+    }
+    /* === Group Sections === */
+    .group {
+      margin-bottom: 20px;
+    }
+    .group label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 8px;
+      color: #444444;
+    }
+    /* === Axis Controls === */
+    .axis-controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+    }
+    .axis-controls button {
+      flex: 1 1 48%;
+      margin: 4px 2px;
+      padding: 8px 12px;
+      font-size: 0.9em;
+      background-color: #007bff;
+      color: #ffffff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .axis-controls button:hover {
+      background-color: #0056b3;
+    }
+    /* Full-width button (Start Travel) */
+    .axis-controls .full {
+      flex: 1 1 100%;
+      background-color: #17a2b8;
+    }
+    /* === General Buttons (Home/Stop) === */
+    .button-group {
+      display: flex;
+      justify-content: space-between;
+    }
+    .button-group button {
+      flex: 1;
+      margin: 0 5px;
+      padding: 8px;
+      font-size: 1em;
+      background-color: #28a745;
+      color: #ffffff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .button-group button.stop {
+      background-color: #dc3545;
+    }
+    .button-group button:hover {
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Camera Slider Control</h1>
+
+    <!-- X Axis Controls -->
+    <div class="group">
+      <label>X Axis</label>
+      <div class="axis-controls">
+        <!-- When pointer is down, we send ?x-jog-start-left? once; on release we send ?x-jog-stop? -->
+        <button
+          onpointerdown="startHold('x-jog-start-left')"
+          onpointerup="endHold()"
+          onpointerleave="endHold()"
+          onpointercancel="endHold()"
+        >Jog Left</button>
+
+        <button
+          onpointerdown="startHold('x-jog-start-right')"
+          onpointerup="endHold()"
+          onpointerleave="endHold()"
+          onpointercancel="endHold()"
+        >Jog Right</button>
+
+        <!-- Set Point A/B and Start Travel for X -->
+        <button onclick="pressButton('x-set-A')">Set Point A</button>
+        <button onclick="pressButton('x-set-B')">Set Point B</button>
+        <button class="full" onclick="pressButton('x-start-travel')">Start Travel</button>
+      </div>
+    </div>
+
+    <!-- Z Axis Controls -->
+    <div class="group">
+      <label>Z Axis</label>
+      <div class="axis-controls">
+        <!-- Similar hold-to-pan logic on Z -->
+        <button
+          onpointerdown="startHold('z-pan-start-left')"
+          onpointerup="endHold()"
+          onpointerleave="endHold()"
+          onpointercancel="endHold()"
+        >Pan Left</button>
+
+        <button
+          onpointerdown="startHold('z-pan-start-right')"
+          onpointerup="endHold()"
+          onpointerleave="endHold()"
+          onpointercancel="endHold()"
+        >Pan Right</button>
+
+        <!-- Set Point A/B and Start Travel for Z -->
+        <button onclick="pressButton('z-set-A')">Set Point A</button>
+        <button onclick="pressButton('z-set-B')">Set Point B</button>
+        <button class="full" onclick="pressButton('z-start-travel')">Start Travel</button>
+      </div>
+    </div>
+
+    <!-- General Buttons: Home & Emergency Stop -->
+    <div class="button-group">
+      <button onclick="pressButton('home')">Home</button>
+      <button class="stop" onclick="pressButton('stop')">Stop</button>
+    </div>
+  </div>
+
+  <!-- Include Socket.IO client library -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    // This variable holds the ?start? button name while it is held down.
+    let currentHoldButton = null;
+
+    /**
+     * pressButton(buttonName)
+     * -----------------------
+     * Emits a one-off button press to the server.
+     */
+    function pressButton(buttonName) {
+      socket.emit('button-press', { button: buttonName });
+    }
+
+    /**
+     * startHold(buttonName)
+     * ---------------------
+     * Called when pointer is pressed down on a Jog/Pan button.
+     * Immediately emits a "start" message, then remembers which button
+     * is being held so that endHold() can emit the matching "stop" on release.
+     */
+    function startHold(buttonName) {
+      // Send the start?jog or start?pan command
+      socket.emit('button-press', { button: buttonName });
+      // Record which command to stop later
+      currentHoldButton = buttonName;
+    }
+
+    /**
+     * endHold()
+     * ----------
+     * Called when pointer is released (or leaves) on a Jog/Pan button.
+     * Determines the corresponding ?stop? command based on currentHoldButton
+     * and emits it once, then clears the hold state.
+     */
+    function endHold() {
+      if (!currentHoldButton) return;
+
+      // Determine the matching "stop" topic.
+      // If currentHoldButton is "x-jog-start-left" or "x-jog-start-right", we send "x-jog-stop".
+      // If it's "z-pan-start-left" or "z-pan-start-right", we send "z-pan-stop".
+      let stopButton = '';
+      if (currentHoldButton.startsWith('x-jog-start')) {
+        stopButton = 'x-jog-stop';
+      } else if (currentHoldButton.startsWith('z-pan-start')) {
+        stopButton = 'z-pan-stop';
+      }
+
+      if (stopButton) {
+        socket.emit('button-press', { button: stopButton });
+      }
+      currentHoldButton = null;
+    }
+  </script>
+</body>
+</html>
